@@ -30,6 +30,7 @@ class GraphAttentionLayer(nn.Module):
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
     def forward(self, input, adj):
+        adj = adj.to_dense()
         h = torch.mm(input, self.W)
         N = h.size()[0]
 
@@ -170,9 +171,10 @@ class PetarVGAT(BaseModel):
         parser.add_argument("--num-features", type=int)
         parser.add_argument("--num-classes", type=int)
         parser.add_argument("--hidden-size", type=int, default=8)
+        parser.add_argument("--nheads", type=int, default=8)
         parser.add_argument("--dropout", type=float, default=0.6)
         parser.add_argument("--alpha", type=float, default=0.2)
-        parser.add_argument("--nheads", type=int, default=8)
+        parser.add_argument("--lr", type=float, default=0.005)
         # fmt: on
 
     @classmethod
