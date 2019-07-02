@@ -2,6 +2,7 @@ import copy
 import random
 
 import numpy as np
+import scipy.sparse as sp
 import torch
 import torch.nn.functional as F
 from tqdm import tqdm
@@ -36,6 +37,7 @@ class NodeClassification(BaseTask):
         self.model = model.cuda()
         self.patience = args.patience
         self.max_epoch = args.max_epoch
+        self._compute_A()
 
         self.optimizer = torch.optim.Adam(
             self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay
@@ -79,14 +81,14 @@ class NodeClassification(BaseTask):
         self.model.train()
         self.optimizer.zero_grad()
         F.nll_loss(
-            self.model(self.data.x, self.data.edge_index)[self.data.train_mask],
+            self.model(self.data.x, self.data.A)[self.data.train_mask],
             self.data.y[self.data.train_mask],
         ).backward()
         self.optimizer.step()
 
     def _test_step(self, split="val"):
         self.model.eval()
-        logits = self.model(self.data.x, self.data.edge_index)
+        logits = self.model(self.data.x, self.data.A)
         loss = F.nll_loss(
             logits[self.data.train_mask],
             self.data.y[self.data.train_mask],
@@ -95,3 +97,40 @@ class NodeClassification(BaseTask):
         pred = logits[mask].max(1)[1]
         acc = pred.eq(self.data.y[mask]).sum().item() / mask.sum().item()
         return acc, loss
+
+    def _compute_A(self):
+        edge_index = self.data.edge_index.cpu().numpy()
+        adj = sp.csr_matrix(
+            (np.ones(edge_index.shape[1]), (edge_index[0], edge_index[1]))
+        )
+        adj = adj + adj.T.multiply(adj.T > adj) - adj.multiply(adj.T > adj)
+        adj = adj + sp.eye(adj.shape[0])
+        D1 = np.array(adj.sum(axis=1)) ** (-0.5)
+        D2 = np.array(adj.sum(axis=0)) ** (-0.5)
+        D1 = sp.diags(D1[:, 0], format="csr")
+        D2 = sp.diags(D2[0, :], format="csr")
+        A = adj.dot(D1)
+        self.data.A = D2.dot(A)
+
+        def sparse_mx_to_torch_sparse_tensor(sparse_mx):
+            """Convert a scipy sparse matrix to a torch sparse tensor."""
+            sparse_mx = sparse_mx.tocoo().astype(np.float32)
+            indices = torch.from_numpy(
+                np.vstack((sparse_mx.row, sparse_mx.col)).astype(np.int64)
+            )
+            values = torch.from_numpy(sparse_mx.data)
+            shape = torch.Size(sparse_mx.shape)
+            return torch.sparse.FloatTensor(indices, values, shape)
+
+        def normalize(mx):
+            """Row-normalize sparse matrix"""
+            rowsum = np.array(mx.sum(1))
+            r_inv = np.power(rowsum, -1).flatten()
+            r_inv[np.isinf(r_inv)] = 0.0
+            r_mat_inv = sp.diags(r_inv)
+            mx = r_mat_inv.dot(mx)
+            return mx
+
+        self.data.A = sparse_mx_to_torch_sparse_tensor(self.data.A).cuda()
+        adj = normalize(adj)
+        self.data.adj = sparse_mx_to_torch_sparse_tensor(adj).cuda()
