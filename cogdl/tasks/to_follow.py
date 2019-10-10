@@ -1,4 +1,4 @@
-import random
+import random,os,argparse
 from collections import defaultdict
 
 import copy
@@ -16,75 +16,9 @@ from cogdl import options
 from cogdl.datasets import build_dataset
 from cogdl.models import build_model
 
-from . import BaseTask, register_task
-
-
-class NEG_loss(nn.Module):
-    def __init__(self, num_nodes, num_sampled, degree=None):
-        super(NEG_loss, self).__init__()
-        self.num_nodes = num_nodes
-        self.num_sampled = num_sampled
-        if degree is not None:
-            self.weights = F.normalize(torch.Tensor(degree).pow(0.75), dim=0)
-        else:
-            self.weights = torch.ones((num_nodes,), dtype=torch.float) / num_nodes
-
-    def forward(self, input, embs):
-        u, v = input
-        n = u.shape[0]
-        log_target = torch.log(torch.sigmoid(torch.sum(torch.mul(embs[u], embs[v]), 1)))
-        negs = torch.multinomial(
-            self.weights, self.num_sampled * n, replacement=True
-        ).view(n, self.num_sampled)
-        noise = torch.neg(embs[negs])
-        sum_log_sampled = torch.sum(
-            torch.log(torch.sigmoid(torch.bmm(noise, embs[u].unsqueeze(2)))), 1
-        ).squeeze()
-
-        loss = log_target + sum_log_sampled
-        return -loss.sum() / n
-
-
-class RWGraph:
-    def __init__(self, nx_G, alpha=0.0):
-        self.G = nx_G
-        self.alpha = alpha
-
-    def walk(self, walk_length, start):
-        # Simulate a random walk starting from start node.
-        G = self.G
-
-        rand = random.Random()
-
-        if start:
-            walk = [start]
-        else:
-            # Sampling is uniform w.r.t V, and not w.r.t E
-            walk = [rand.choice(list(G.nodes()))]
-
-        while len(walk) < walk_length:
-            cur = walk[-1]
-            if len(G[cur]) > 0:
-                if rand.random() >= self.alpha:
-                    walk.append(rand.choice(list(G[cur].keys())))
-                else:
-                    walk.append(walk[0])
-            else:
-                break
-        return [str(node) for node in walk]
-
-    def simulate_walks(self, num_walks, walk_length):
-        G = self.G
-        walks = []
-        nodes = list(G.nodes())
-        # print('Walk iteration:')
-        for walk_iter in range(num_walks):
-            random.shuffle(nodes)
-            for node in nodes:
-                walks.append(self.walk(walk_length=walk_length, start=node))
-
-        return walks
-
+import cogdl.tasks.link_prediction
+from . import register_task
+from .link_prediction import LinkPrediction
 
 def generate_pairs(walks, vocab):
     pairs = []
@@ -219,19 +153,70 @@ def evaluate(embs, true_edges, false_edges):
     ps, rs, _ = precision_recall_curve(y_true, y_scores)
     return roc_auc_score(y_true, y_scores), f1_score(y_true, y_pred), auc(rs, ps)
 
+def get_description(G,id0,node):
+    if node in following(G,id0) and node in follower(G,id0):
+        flag="<->bot"
+    elif node in follower(G,id0):
+        flag="->bot"
+    elif node in following(G,id0):
+        flag="<-bot"
+    elif is_follower_of(G,follower(G,id0),node):
+        flag="-> x -> bot"
+    elif is_following_of(G,following(G,id0),node):
+        flag="<- x <-bot"
+    elif is_follower_of(G,following(G,id0),node):
+        flag="-> x <-bot"
+    elif is_following_of(G,follower(G,id0),node):
+        flag="<- x ->bot"
+    else:
+        flag='None'
+    return flag
 
-@register_task("link_prediction")
-class LinkPrediction(BaseTask):
+def following(G, node):
+    if np.array(list(G.out_edges(node))).shape[0]==0:
+        result=np.array([])
+    else:
+        result=np.array(list(G.out_edges(node)))[:,1]
+    return result
+
+def follower(G, node):
+    if np.array(list(G.in_edges(node))).shape[0]==0:
+        result=np.array([])
+    else:
+        result=np.array(list(G.in_edges(node)))[:,0]
+    return result
+
+def is_follower_of(G,a_set,target):
+    lst = False
+    for node in a_set:
+        if target in follower(G,node):
+            lst = True
+            break
+    return lst
+
+def is_following_of(G,a_set,target):
+    lst = False
+    for node in a_set:
+        if target in following(G,node):
+            lst = True
+            break
+    return lst
+
+@register_task("to_follow")
+class ToFollow(LinkPrediction):
     @staticmethod
     def add_args(parser):
         """Add task-specific arguments to the parser."""
         # fmt: off
         parser.add_argument("--hidden-size", type=int, default=128)
         parser.add_argument("--negative-ratio", type=int, default=5)
+        #parser.add_argument("--ego-id", type=int, default=0)
+        #parser.add_argument("--candidates", type=int, default=0)
+        parser.add_argument('--infile', type=str, help='txt file, the first line is the id of bot(int), the second line lists the candidates for evaluation, separated by space', default='infile.txt')
         # fmt: on
-
+    
     def __init__(self, args):
-        super(LinkPrediction, self).__init__(args)
+        super(ToFollow, self).__init__(args)
 
         dataset = build_dataset(args)
         data = dataset[0]
@@ -242,76 +227,55 @@ class LinkPrediction(BaseTask):
         self.model = model
         self.patience = args.patience
         self.max_epoch = args.max_epoch
+        f=open(args.infile,'r')
+        self.bot=int(f.readline())
+        self.candidates=list(map(int,f.readline().split(' ')[:]))
+        f.close()
+        print('infile.txt has been read')
 
         edge_list = self.data.edge_index.cpu().numpy()
         edge_list = list(zip(edge_list[0], edge_list[1]))
-        self.train_data, self.valid_data, self.test_data = divide_data(edge_list, [0.85, 0.05, 0.10])
+        self.train_data, self.valid_data, self.test_data = divide_data(edge_list, [1, 0.0, 0.0])#change
 
 
         self.valid_data, self.test_data = gen_node_pairs(self.train_data, self.valid_data, self.test_data)
 
-        # edge_list = self.data.edge_index.cpu().numpy()
-        # G = nx.Graph()
-        # G.add_edges_from(edge_list.T.tolist())
-        # self.criterion = NEG_loss(
-        #     len(self.data.x),
-        #     args.negative_ratio,
-        #     degree=np.array(list(dict(G.degree()).values())),
-        # )
-
-        # self.optimizer = torch.optim.Adam(
-        #     self.model.parameters(), lr=args.lr, weight_decay=args.weight_decay
-        # )
-
     def train(self):
         G = nx.DiGraph()
         G.add_edges_from(self.train_data)
-        embeddings = self.model.train(G)
+        print('number of nodes:',G.number_of_nodes())
+        print('number of edges:',G.number_of_edges())
+        pwd = os.getcwd()
+        pwd=os.path.join(pwd,'cogdl/data','twitter-dynamic-net','processed','embs.npy') 
+        if os.path.exists(pwd):
+            print('embs already exists')
+            embs=np.load(pwd,allow_pickle=True)
+            embs=embs.item()
+        else:
+            print('begin training for embs')
+            embeddings = self.model.train(G)
+        #np.save('embeddings.npy',embeddings)
+            embs = dict()
+            for vid, node in enumerate(G.nodes()):
+                embs[node] = embeddings[vid]
+            np.save(pwd,embs) 
 
-        embs = dict()
-        for vid, node in enumerate(G.nodes()):
-            embs[node] = embeddings[vid]
-
-        # epoch_iter = tqdm(range(self.max_epoch))
-        # patience = 0
-        # best_score = 0
-        # for epoch in epoch_iter:
-        #     self._train_step()
-        #     roc_auc, f1_score, pr_auc = self._test_step(self.valid_data)
-        #     epoch_iter.set_description(
-        #         f"Epoch: {epoch:03d}, ROC-AUC: {roc_auc:.4f}, F1: {f1_score:.4f}, PR-AUC: {pr_auc:.4f}"
-        #     )
-        #     if roc_auc > best_score:
-        #         best_score = roc_auc
-        #         best_model = copy.deepcopy(self.model)
-        #         patience = 0
-        #     else:
-        #         patience += 1
-        #         if patience > self.patience:
-        #             self.model = best_model
-        #             epoch_iter.close()
-        #             break
-        # roc_auc, f1_score, pr_auc = self._test_step(self.test_data)
-        roc_auc, f1_score, pr_auc = evaluate(embs, self.test_data[0], self.test_data[1])
-        print(
-            f"Test ROC-AUC = {roc_auc:.4f}, F1 = {f1_score:.4f}, PR-AUC = {pr_auc:.4f}"
-        )
-        return dict(
-            ROC_AUC=roc_auc,
-            PR_AUC=pr_auc,
-            F1=f1_score,
-        )
-
-    def _train_step(self):
-        self.model.train()
-        embs = self.model(self.data.x, self.data.edge_index)
-
-        self.optimizer.zero_grad()
-        self.criterion(self.train_data, embs).backward()
-        self.optimizer.step()
-
-    def _test_step(self, test_data):
-        self.model.eval()
-        embs = self.model(self.data.x, self.data.edge_index)
-        roc_auc, f1_score, pr_auc = evaluate(embs, test_data[0], test_data[1])
-        return roc_auc, f1_score, pr_auc
+        scores=dict()
+        for node in self.candidates:
+            scores[node]=get_score(embs, self.bot, node)
+        rank=sorted(scores.items(), key=lambda item:item[1],reverse=True)
+        np.save(os.path.join(os.getcwd(),'cogdl/data','twitter-dynamic-net','processed','rank.npy'),rank)
+        for i in range(len(rank)):
+            flag=get_description(G,self.bot,rank[i][0])
+            rank[i]=list(rank[i])
+            rank[i].append(flag)
+        return rank
+        #roc_auc, f1_score, pr_auc = evaluate(embs, self.test_data[0], self.test_data[1])
+        #print(
+        #   f"Test ROC-AUC = {roc_auc:.4f}, F1 = {f1_score:.4f}, PR-AUC = {pr_auc:.4f}"
+        #)
+        #return dict(
+        #    ROC_AUC=roc_auc,
+        #    PR_AUC=pr_auc,
+        #    F1=f1_score,
+        #)
