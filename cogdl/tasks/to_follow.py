@@ -237,7 +237,6 @@ class ToFollow(LinkPrediction):
         edge_list = list(zip(edge_list[0], edge_list[1]))
         self.train_data, self.valid_data, self.test_data = divide_data(edge_list, [1, 0.0, 0.0])#change
 
-
         self.valid_data, self.test_data = gen_node_pairs(self.train_data, self.valid_data, self.test_data)
 
     def train(self):

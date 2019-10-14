@@ -71,11 +71,11 @@ class twitter(Dataset):
         return result
 
     def process(self):
-        edge_index=self.read_txt_label(osp.join(self.raw_dir, '{}.txt'.format(self.name)),end=-1,num=2,dtype=torch.int)
-        #edge_attr =self.read_txt_label(osp.join(self.raw_dir, '{}.txt'.format(self.name)),start=-1, num=1,dtype=torch.float)
-        
-        #data = Data(edge_index=edge_index,edge_attr=edge_attr, x=None, y=None)
-        data = Data(edge_index=edge_index, x=None, y=None)
+        edge=self.read_txt_label(osp.join(self.raw_dir, '{}.txt'.format(self.name)),num=2,dtype=torch.int)
+        edge_index=edge[:,:-1]
+        edge_attr=edge[:,-1:]
+        data = Data(edge_index=edge_index,edge_attr=edge_attr, x=None, y=None)
+        #data = Data(edge_index=edge_index, x=None, y=None)
         data = data if self.pre_transform is None else self.pre_transform(data)
         torch.save(data, self.processed_paths[0])
 
