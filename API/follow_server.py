@@ -9,19 +9,28 @@ from BotLink import bot_follow
 bf=bot_follow()
 app = Flask('to_follow')
 #app.config['JSON_AS_ASCII'] = False
+app.secret_key='\x03\x8do\xea\xbfuQ\xbbW\xdd\xace\x85\xa6\x8bV\x1b\x1fg\xf4\xe3Ke\x0f'
 
 def to_follow_main(json_data):
-    df=pd.DataFrame()
-    #filename = 'output.csv'
+    file_mid = 'nameid.csv'
     bot_name = json_data['bot']
     name_list=[x.strip() for x in json_data['name_list']]#list of str
     score={}
     embs=bf.get_embs('embs.npy')
     user_map=bf.get_name2node()
-    print("bot id=",user_map[bot_name])
+    
+    # write input name list 
+    index=['bot']+['target_'+str(i) for i in range(len(name_list))]
+    df=pd.DataFrame([bot_name]+name_list,index=index,columns=['name'])
+    df.to_csv(file_mid)
+    
+    # get result
     result={}
     if bf.check_name(bot_name,embs,user_map):
         score=bf.get_score_dict(embs,user_map,bot_name,name_list)
+        df_score=pd.DataFrame(pd.Series(score),columns=['Score'])
+        df_score=df_score.sort_index(by = 'Score',axis = 0,ascending = False)
+        df_score.to_csv('score_out.csv')
         result['score']=score
         result=bf.to_jsonstr(result)
         return result

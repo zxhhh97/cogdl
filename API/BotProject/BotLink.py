@@ -1,3 +1,7 @@
+'''
+author:xiaohan 
+
+'''
 import pandas as pd
 import numpy as np
 import warnings, time
@@ -32,7 +36,7 @@ class bot_follow(object):
             if self.check_name(name,embs,user_map):
                 scoredict[name]=round(float(self.get_score(embs,user_map[bot_name],user_map[name])),4)
             else:
-                scoredict[name]=0
+                scoredict[name]=-1
         return scoredict
 
     def get_name2node(self):
