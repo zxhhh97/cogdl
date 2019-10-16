@@ -39,7 +39,7 @@ def to_follow_main(json_data):
         result['score']={}
         return bf.to_jsonstr(result)
 
-def to_follow_debug(json_data):
+def to_follow_traindata(json_data):
     df=pd.DataFrame()
     #filename = 'output.csv'
     bot_name = json_data['bot']

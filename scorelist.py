@@ -75,10 +75,32 @@ if __name__ == "__main__":
 
         # Collect results
         results = pool.map(main, variant_args_generator())
+        for variant, result in zip(variants, [results[0][1]]):
+            results_dict[variant[:-1]].append(result)
+
     # Average for different seeds
-    col_names = ["user_id"] + ["Prob_of_following_back"]+['description']
 
     tab_data = []
-    for k in results[0]:
-        tab_data.append(k)
-    print(tabulate(tab_data, headers=col_names, tablefmt="fancy_grid"))
+    df_rank=results[0][0]
+    #accuracy=results[0][1]
+    print(tabulate(df_rank, headers=['user_id']+df_rank.columns.values.tolist(), tablefmt="github"))
+    
+    
+    # Average for different seeds
+    col_names = ["Variant"] + list(results_dict[variant[:-1]][-1].keys())
+    tab_data = []
+    for variant in results_dict:
+        Results = np.array([list(res.values()) for res in results_dict[variant]])
+        tab_data.append(
+            [variant]
+            + list(
+                itertools.starmap(
+                    lambda x, y: f"{x:.4f}±{y:.4f}",
+                    zip(
+                        np.mean(Results, axis=0).tolist(),
+                        np.std(Results, axis=0).tolist(),
+                    ),
+                )
+            )
+        )
+    print(tabulate(tab_data, headers=col_names, tablefmt="github"))

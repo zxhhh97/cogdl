@@ -64,7 +64,7 @@ class ProNE(BaseModel):
             smat, n_components=self.dimension, n_iter=5, random_state=None
         )
         U = U * np.sqrt(Sigma)
-        U = preprocessing.normalize(U, "l2")
+        U = preprocessing.normalize(U+1e-5, "l2") # change 
         print("sparsesvd time", time.time() - t1)
         return U
 

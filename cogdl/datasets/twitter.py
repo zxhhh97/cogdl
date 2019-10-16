@@ -60,7 +60,7 @@ class twitter(Dataset):
         extract_rar(path, self.raw_dir)
         os.unlink(path)
 
-    def read_txt_label(self,path, start=0, end=None,num=2, dtype=None):
+    def read_txt_label(self,path, start=0, end=None,num=3, dtype=None):
         with open(path,'r') as f:
             src = f.read().split('\n')[:-1]
             print('edge number: ', len(src))
@@ -71,9 +71,9 @@ class twitter(Dataset):
         return result
 
     def process(self):
-        edge=self.read_txt_label(osp.join(self.raw_dir, '{}.txt'.format(self.name)),num=2,dtype=torch.int)
-        edge_index=edge[:,:-1]
-        edge_attr=edge[:,-1:]
+        edge=self.read_txt_label(osp.join(self.raw_dir, '{}.txt'.format(self.name)),num=3,dtype=torch.int)
+        edge_index=edge[:-1,:]
+        edge_attr=edge[-1:,:]
         data = Data(edge_index=edge_index,edge_attr=edge_attr, x=None, y=None)
         #data = Data(edge_index=edge_index, x=None, y=None)
         data = data if self.pre_transform is None else self.pre_transform(data)

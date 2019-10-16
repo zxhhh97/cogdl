@@ -156,11 +156,6 @@ def randomly_choose_false_edges(nodes, true_edges, num):
 def gen_node_pairs(train_data, valid_data, test_data):
     G = nx.DiGraph()
     G.add_edges_from(train_data)
-    # RWG = RWGraph(G)
-
-    # base_walks = RWG.simulate_walks(20, 10)
-    # vocab, index2word = generate_vocab(base_walks)
-    # train_pairs = generate_pairs(base_walks, vocab)
 
     training_nodes = set(list(G.nodes()))
     valid_true_data = []
