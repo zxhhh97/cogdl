@@ -142,7 +142,6 @@ def evaluate(embs, true_edges, false_edges):
     for edge in true_edges:
         true_list.append(1)
         prediction_list.append(get_score(embs, edge[0], edge[1]))
-
     for edge in false_edges:
         true_list.append(0)
         prediction_list.append(get_score(embs, edge[0], edge[1]))
@@ -242,8 +241,6 @@ def get_num_follower_you_know(G,bot,node):
     return len(a)+len(b)-len(set(a+b))
 
 
-
-
 @register_task("to_follow")
 class ToFollow(LinkPrediction):
     @staticmethod
@@ -310,6 +307,10 @@ class ToFollow(LinkPrediction):
             for vid, node in enumerate(G.nodes()):
                 embs[node] = embeddings[vid]
             np.save(pwd,embs) 
+        for node,emb in embs.items():
+            if np.all(emb == 0):
+                lis_emb=[embs[n] for n in G.predecessors(node)]
+                embs[node]=np.mean(lis_emb,axis=0)
 
         scores=dict()
         true_label=dict()
